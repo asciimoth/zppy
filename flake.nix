@@ -44,6 +44,7 @@
               ];
             };
             build-system = [ pkgs.python311Packages.setuptools ];
+            nativeCheckInputs = [ zpg.packages.${system}.zpg ];
             pythonImportsCheck = [ "zppy" ];
             checkPhase = ''
               runHook preCheck
