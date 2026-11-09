@@ -3,10 +3,9 @@ export PYTHONPATH := justfile_directory() / "src"
 default:
     @just --list
 
-# Run Python with access to the local package, e.g. just run -c 'import zppy'.
-[positional-arguments]
-run *args:
-    python "$@"
+# Show the Python progress demo through zpg.
+run:
+    zpg python -u examples/mock.py
 
 # Run standard-library tests. Extra arguments go to unittest discovery.
 [positional-arguments]

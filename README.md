@@ -9,6 +9,15 @@ The pipe transport supports POSIX systems, including Linux and macOS.
 
 ## Usage
 
+Run the example under `zpg` from the Nix development shell:
+
+```sh
+just run
+```
+
+The example sends a changing task tree and writes messages to stdout and
+stderr, like `zpg --mock`.
+
 ```python
 import time
 
