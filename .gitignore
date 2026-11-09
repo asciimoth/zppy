@@ -218,3 +218,14 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+.env
+/.envrc
+/.pre-commit-config.yaml
+/.direnv
+
+/local
+
+# Nix build outputs
+/result
+/result-*
