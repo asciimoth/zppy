@@ -5,6 +5,8 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     git-hooks.url = "github:cachix/git-hooks.nix";
     git-hooks.inputs.nixpkgs.follows = "nixpkgs";
+    zpg.url = "github:asciimoth/zpg";
+    zpg.inputs.nixpkgs.follows = "nixpkgs";
   };
 
   outputs =
@@ -12,6 +14,7 @@
       self,
       nixpkgs,
       git-hooks,
+      zpg,
       ...
     }:
     let
@@ -108,6 +111,7 @@
                 ps.setuptools
               ]))
               pkgs.just
+              zpg.packages.${system}.zpg
             ]
             ++ hook.enabledPackages;
             inherit (hook) shellHook;
