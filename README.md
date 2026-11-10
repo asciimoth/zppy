@@ -31,6 +31,14 @@ protocol design.
 
 ![zpg displaying a task tree](https://raw.githubusercontent.com/asciimoth/zpg/master/demo.gif)
 
+## Alternatives
+
+These libraries report Zig progress from other languages:
+
+- [zpgo](https://github.com/asciimoth/zpgo) for Go
+- [zprs](https://github.com/asciimoth/zprs) for Rust
+- [zpjs](https://github.com/asciimoth/zpjs) for JavaScript and TypeScript
+
 ## Library usage
 
 If you use this library, [open an issue][issues] or [send a pull
