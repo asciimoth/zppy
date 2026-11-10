@@ -41,6 +41,7 @@
                 ./LICENSE
                 ./src
                 ./tests
+                ./examples
               ];
             };
             build-system = [ pkgs.python311Packages.setuptools ];

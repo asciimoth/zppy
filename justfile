@@ -3,9 +3,9 @@ export PYTHONPATH := justfile_directory() / "src"
 default:
     @just --list
 
-# Show the Python progress demo through zpg.
+# Show the native subprocess and forked Python worker trees through zpg.
 run:
-    zpg python -u examples/mock.py
+    zpg --renderer tree python -u examples/mock.py
 
 # Run standard-library tests. Extra arguments go to unittest discovery.
 [positional-arguments]

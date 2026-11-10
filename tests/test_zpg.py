@@ -3,12 +3,13 @@
 import os
 import re
 import shutil
-import subprocess
 import sys
 import tempfile
 import textwrap
 import unittest
 from pathlib import Path
+
+from tests.process_helpers import run_process
 
 ZPG = shutil.which("zpg")
 
@@ -21,7 +22,7 @@ class ZpgCompatibilityTests(unittest.TestCase):
         env["PYTHONPATH"] = str(Path(__file__).resolve().parents[1] / "src")
         with tempfile.TemporaryDirectory() as directory:
             log_file = Path(directory) / "progress.log"
-            result = subprocess.run(
+            result = run_process(
                 [
                     ZPG,
                     "--test",
@@ -32,8 +33,8 @@ class ZpgCompatibilityTests(unittest.TestCase):
                     textwrap.dedent(source),
                 ],
                 env=env,
-                capture_output=True,
-                timeout=15,
+                timeout=20,
+                cwd=Path(__file__).resolve().parents[1],
             )
             log = log_file.read_text()
         self.assertEqual(result.returncode, 0, result.stderr.decode() + log)
@@ -41,6 +42,61 @@ class ZpgCompatibilityTests(unittest.TestCase):
         self.assertNotIn("no progress received", log)
         self.assertNotIn("incomplete", log)
         return result, log
+
+    @unittest.skipUnless(hasattr(os, "fork"), "demo requires os.fork()")
+    def test_demo_displays_both_trees_and_prefixes_all_python_entries(self):
+        result, log = self.run_worker("""
+            import runpy
+            from zppy import Node
+
+            # Check tasks at end(), too: a short final update can occur
+            # between two automatic reports and be absent from the wire.
+            end = Node.end
+            def checked_end(node):
+                progress = node._progress
+                if progress is not None:
+                    with progress._lock:
+                        state = progress._nodes.get(node)
+                        if state is not None and state.name.startswith(b'PY '):
+                            assert state.completed == state.total, state
+                end(node)
+            Node.end = checked_end
+            runpy.run_path('examples/mock.py', run_name='__main__')
+        """)
+        self.assertIn(b"PY mock stdout: complete", result.stdout)
+        self.assertIn(b"PY mock stderr: complete", result.stderr)
+        overlapping = False
+        python_names = set()
+        for frame in re.split(r"(?=snapshot=\d+ nodes=)", log):
+            nodes = {
+                int(index): (int(parent), name)
+                for index, parent, name in re.findall(
+                    r'node=(\d+) parent=(\d+) completed=\d+ total=\d+ name="([^"]*)"',
+                    frame,
+                )
+            }
+            roots = {name: index for index, (parent, name) in nodes.items()}
+            if "PY worker" not in roots:
+                continue
+            worker = roots["PY worker"]
+            descendants = set()
+            for index, (_, name) in nodes.items():
+                current = index
+                seen = set()
+                while current in nodes and current not in seen:
+                    if current == worker:
+                        self.assertTrue(name.startswith("PY "), name)
+                        python_names.add(name)
+                        descendants.add(index)
+                        break
+                    seen.add(current)
+                    current = nodes[current][0]
+            if "mock" in roots and len(descendants) > 1:
+                native = roots["mock"]
+                overlapping |= any(parent == native for parent, _ in nodes.values())
+        self.assertTrue(overlapping, "native and Python descendants never overlapped")
+        self.assertTrue({"PY discover", "PY build", "PY publish"} <= python_names)
+        self.assertIn('node=0 parent=255 completed=2 total=2 name="demo"', log)
 
     def test_nested_snapshots_and_output(self):
         result, log = self.run_worker("""
@@ -85,6 +141,86 @@ class ZpgCompatibilityTests(unittest.TestCase):
         """)
         self.assertIn('completed=2 total=2 name="automatic"', log)
         self.assertGreater(len(re.findall(r"snapshot=\d+ nodes=", log)), 1)
+
+    def test_subprocess_trees_with_native_zpg_reports(self):
+        _, log = self.run_worker("""
+            import sys
+            from zppy import Progress
+
+            child_source = (
+                'from zppy import Progress\\n'
+                'with Progress("child", refresh_rate=None) as p:\\n'
+                '    task = p.root.start("grandchild")\\n'
+                '    proc = task.spawn(["zpg", "--report", "3", "8", '
+                '"--name", "native leaf"])\\n'
+                '    assert proc.wait(timeout=5) == 0\\n'
+            )
+            with Progress("parent", 2, refresh_rate=None) as p:
+                first = p.root.start("first")
+                second = p.root.start("second")
+                a = first.spawn(["zpg", "--report", "2", "5", "--name", "native"])
+                b = second.spawn([sys.executable, "-c", child_source])
+                assert a.wait(timeout=5) == 0
+                assert b.wait(timeout=5) == 0
+                assert p.flush()
+                first.end()
+                assert p.flush()
+                second.end()
+        """)
+        for line in [
+            'node=1 parent=0 completed=2 total=5 name="native"',
+            'node=2 parent=0 completed=0 total=0 name="child"',
+            'node=3 parent=2 completed=3 total=8 name="native leaf"',
+            'node=2 parent=1 completed=3 total=8 name="native leaf"',
+            'node=0 parent=255 completed=2 total=2 name="parent"',
+        ]:
+            self.assertIn(line, log)
+
+    @unittest.skipUnless(hasattr(os, "fork"), "requires os.fork()")
+    def test_mixed_fork_and_spawn_tree(self):
+        spawned_source = textwrap.dedent("""
+            import os
+            from zppy import Progress
+            with Progress('spawned', refresh_rate=None) as p:
+                pid = p.root.start('fork task').fork()
+                if pid == 0:
+                    with Progress('fork leaf', 10, refresh_rate=None) as c:
+                        c.root.set_completed_items(6)
+                    os._exit(0)
+                assert os.waitpid(pid, 0)[1] == 0
+        """)
+        _, log = self.run_worker(f"""
+            import os
+            import sys
+            from zppy import Progress
+
+            with Progress('parent', 2, refresh_rate=None) as p:
+                first = p.root.start('first')
+                second = p.root.start('second')
+                pid = first.fork()
+                if pid == 0:
+                    with Progress('forked', refresh_rate=None) as c:
+                        native = c.root.start('native task')
+                        proc = native.spawn([
+                            'zpg', '--report', '3', '8', '--name', 'native leaf'
+                        ])
+                        assert proc.wait(timeout=5) == 0
+                    os._exit(0)
+                proc = second.spawn([sys.executable, '-c', {spawned_source!r}])
+                assert proc.wait(timeout=5) == 0
+                assert os.waitpid(pid, 0)[1] == 0
+                assert p.flush()
+                first.end()
+                second.end()
+        """)
+        for line in [
+            'node=1 parent=0 completed=0 total=0 name="forked"',
+            'node=2 parent=0 completed=0 total=0 name="spawned"',
+            'node=3 parent=1 completed=3 total=8 name="native leaf"',
+            'node=4 parent=2 completed=6 total=10 name="fork leaf"',
+            'node=0 parent=255 completed=2 total=2 name="parent"',
+        ]:
+            self.assertIn(line, log)
 
     def test_full_tree_and_reused_capacity(self):
         _, log = self.run_worker("""
