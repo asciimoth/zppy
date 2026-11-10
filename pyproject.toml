@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77.0.3"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -9,6 +9,22 @@ description = "Zig progress protocol client for Python"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = []
+license = "CC0-1.0"
+license-files = ["LICENSE"]
+keywords = ["zig", "progress", "zig-progress-protocol"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Operating System :: POSIX",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+[project.urls]
+Repository = "https://github.com/asciimoth/zppy"
+Issues = "https://github.com/asciimoth/zppy/issues"
+Documentation = "https://github.com/asciimoth/zppy#readme"
 
 [tool.setuptools.packages.find]
 where = ["src"]

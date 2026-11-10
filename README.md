@@ -6,6 +6,14 @@ protocol. Use it to report tasks, subtasks, and progress from child processes.
 `zppy` requires Python 3.11 or later. The library has no runtime dependencies.
 The pipe transport supports POSIX systems, including Linux and macOS.
 
+## Installation
+
+```sh
+python -m pip install zppy
+```
+
+The package uses the [CC0 1.0 Universal license](LICENSE).
+
 ## Zig progress protocol
 
 The Zig progress protocol lets a process send a tree of tasks to its parent

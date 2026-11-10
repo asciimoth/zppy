@@ -31,7 +31,7 @@
           pkgs = nixpkgs.legacyPackages.${system};
           package = pkgs.python311Packages.buildPythonPackage {
             pname = "zppy";
-            version = "0.1.0";
+            version = (builtins.fromTOML (builtins.readFile ./pyproject.toml)).project.version;
             pyproject = true;
             src = pkgs.lib.fileset.toSource {
               root = ./.;
@@ -114,6 +114,7 @@
                 ps.setuptools
               ]))
               pkgs.just
+              pkgs.twine
               zpg.packages.${system}.zpg
             ]
             ++ hook.enabledPackages;
