@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import math
 import os
+import stat
 import struct
 import subprocess
 import threading
@@ -11,6 +11,9 @@ import weakref
 from contextlib import ExitStack
 from dataclasses import dataclass, field
 from types import TracebackType
+
+if os.name == "posix":
+    import fcntl
 
 _MAX_NODES = 253
 _MAX_COMPLETED = 0xFFFFFFFF
@@ -22,6 +25,17 @@ _fork_lock = threading.Lock()
 _reporters: weakref.WeakSet[Progress] = weakref.WeakSet()
 # In a fork child this owns the source descriptor exposed through ZIG_PROGRESS.
 _fork_channel: int | None = None
+
+
+def _interval(value: float, name: str, *, allow_zero: bool = False) -> float:
+    if not isinstance(value, (int, float)):
+        raise TypeError(f"{name} must be a number")
+    if not 0 <= value <= threading.TIMEOUT_MAX or (value == 0 and not allow_zero):
+        lower = "nonnegative" if allow_zero else "positive"
+        raise ValueError(
+            f"{name} must be {lower} and at most {threading.TIMEOUT_MAX} seconds"
+        )
+    return float(value)
 
 
 def _count(value: int) -> int:
@@ -382,12 +396,9 @@ class Progress:
         self._name_size = name_size
         name = _name(root_name, name_size)
         total = min(_count(estimated_total_items), _MAX_TOTAL)
-        if refresh_rate is not None and (
-            not math.isfinite(refresh_rate) or refresh_rate <= 0
-        ):
-            raise ValueError("refresh_rate must be positive and finite, or None")
-        if not math.isfinite(initial_delay) or initial_delay < 0:
-            raise ValueError("initial_delay must be nonnegative and finite")
+        if refresh_rate is not None:
+            refresh_rate = _interval(refresh_rate, "refresh_rate")
+        initial_delay = _interval(initial_delay, "initial_delay", allow_zero=True)
         if fd is not None and (not isinstance(fd, int) or not 0 <= fd <= 65535):
             raise ValueError("fd must be an integer from 0 to 65535")
         self._lock = threading.Lock()
@@ -402,14 +413,22 @@ class Progress:
         self._children: dict[Node, _Child] = {}
         self.root = Node(self)
         with _fork_lock:
-            if not disable:
+            if not disable and os.name == "posix":
                 source = _environment_fd() if fd is None else fd
                 if source is not None:
                     try:
                         self._fd = os.dup(source)
-                        # Duplicates share this flag with the caller's descriptor.
-                        # The protocol requires a nonblocking channel.
-                        os.set_blocking(self._fd, False)
+                        # Check the duplicate before changing shared flags or
+                        # writing. A stale environment entry can name a file.
+                        if (
+                            not stat.S_ISFIFO(os.fstat(self._fd).st_mode)
+                            or fcntl.fcntl(self._fd, fcntl.F_GETFL) & os.O_ACCMODE
+                            == os.O_RDONLY
+                        ):
+                            self._disconnect()
+                        else:
+                            # Duplicates share this flag with the caller's fd.
+                            os.set_blocking(self._fd, False)
                     except OSError:
                         self._disconnect()
             if self._fd is not None:

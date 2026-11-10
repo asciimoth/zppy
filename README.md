@@ -153,6 +153,9 @@ Use `progress.root` to access its root task.
 | `disable` | Disable all reporting when true. |
 | `name_size` | Name field size: `120` by default, or `40` for the old format. |
 
+Timer values must be finite numbers no greater than `threading.TIMEOUT_MAX`.
+`refresh_rate` must be positive, and `initial_delay` must be nonnegative.
+
 `progress.enabled` indicates whether the channel is open.
 `progress.flush()` tries to send a snapshot immediately. It returns `True` if
 the current snapshot was sent in full, or `False` if reporting is disabled or
@@ -216,6 +219,10 @@ it does not add tasks to it. For example, if `zppy` sends a tree and then
 different processes can also interleave when a `zppy` packet is larger than one
 atomic pipe write. Use `Node.spawn()` or `Node.fork()` to combine progress from
 separate processes through private pipes. Create a fresh reporter in each child.
+
+The reporter accepts only writable POSIX pipes. Other descriptors, including
+regular files and read-only pipes, disable reporting without changing their
+data or blocking mode. Reporting is disabled on other platforms.
 
 The reporter duplicates the supplied descriptor and never closes the original.
 Its duplicate is not inherited across exec. It sets the channel to nonblocking

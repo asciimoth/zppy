@@ -1,6 +1,7 @@
 import os
 import select
 import struct
+import tempfile
 import threading
 import unittest
 from unittest.mock import patch
@@ -175,8 +176,13 @@ class ProgressTests(unittest.TestCase):
             {"refresh_rate": -1},
             {"refresh_rate": float("nan")},
             {"refresh_rate": float("inf")},
+            {"refresh_rate": threading.TIMEOUT_MAX * 2},
+            {"refresh_rate": 10**1000},
             {"initial_delay": -1},
+            {"initial_delay": float("nan")},
             {"initial_delay": float("inf")},
+            {"initial_delay": threading.TIMEOUT_MAX * 2},
+            {"initial_delay": 10**1000},
             {"fd": -1},
             {"fd": 65536},
             {"estimated_total_items": -1},
@@ -185,6 +191,19 @@ class ProgressTests(unittest.TestCase):
         ]:
             with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
                 Progress(**kwargs)
+
+    def test_timer_types_and_largest_supported_delay(self):
+        for name in ("refresh_rate", "initial_delay"):
+            for value in ("1", object(), 1j):
+                with self.subTest(name=name, value=value):
+                    with self.assertRaises(TypeError):
+                        Progress(disable=True, **{name: value})
+        progress = self.reporter(
+            initial_delay=threading.TIMEOUT_MAX,
+            refresh_rate=threading.TIMEOUT_MAX,
+        )
+        progress.close()
+        self.assertFalse(progress._thread.is_alive())
 
     def test_absent_invalid_and_disabled_channels(self):
         values = [None, "", "-1", "+3", " 3", "3 ", "3.0", "٣", "65536", "9" * 5000]
@@ -216,6 +235,32 @@ class ProgressTests(unittest.TestCase):
         os.close(closed)
         with Progress(fd=closed) as progress:
             self.assertFalse(progress.enabled)
+
+    def test_regular_file_channel_does_not_change_data_or_flags(self):
+        with tempfile.TemporaryFile() as file:
+            file.write(b"keep this data")
+            file.seek(0)
+            blocking = os.get_blocking(file.fileno())
+            for from_env in (False, True):
+                with self.subTest(from_env=from_env):
+                    kwargs = {} if from_env else {"fd": file.fileno()}
+                    with patch.dict(os.environ, {"ZIG_PROGRESS": str(file.fileno())}):
+                        with Progress(**kwargs) as progress:
+                            self.assertFalse(progress.enabled)
+                            self.assertFalse(progress.flush())
+                            self.assertIsNone(progress._thread)
+                    self.assertEqual(file.tell(), 0)
+                    self.assertEqual(os.get_blocking(file.fileno()), blocking)
+            self.assertEqual(file.read(), b"keep this data")
+
+    def test_read_only_pipe_is_disabled_without_changing_flags(self):
+        os.set_blocking(self.read_fd, True)
+        with Progress(fd=self.read_fd, refresh_rate=None) as progress:
+            self.assertFalse(progress.enabled)
+            self.assertFalse(progress.flush())
+        self.assertTrue(os.get_blocking(self.read_fd))
+        os.write(self.write_fd, b"still open")
+        self.assertEqual(os.read(self.read_fd, 10), b"still open")
 
     def test_full_pipe_drops_unsent_snapshot(self):
         progress = self.reporter()

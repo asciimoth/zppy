@@ -39,6 +39,7 @@
                 ./pyproject.toml
                 ./README.md
                 ./LICENSE
+                ./MANIFEST.in
                 ./src
                 ./tests
                 ./examples
