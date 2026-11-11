@@ -29,7 +29,7 @@ progress in a terminal. With `zppy`, Python programs can send progress to
 See Andrew Kelley's [Zig progress protocol specification][protocol] for the
 protocol design.
 
-![zpg displaying a task tree](https://raw.githubusercontent.com/asciimoth/zpg/master/demo.gif)
+![zpg displaying a task tree](https://vhs.charm.sh/vhs-5OKsqixxKTapPmjdIv2Qhf.gif)
 
 ## Alternatives
 
